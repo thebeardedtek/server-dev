@@ -20,6 +20,7 @@ app.set('PORT', PORT);
 
 // Get our API routes
 const routes = require('./routes');
+// const mailer = require('./mailer');
 
 // create application/json parser
 const jsonParser = bodyParser.json();
@@ -37,16 +38,9 @@ app.use(express.static(path.join(__dirname, './../dist/bearded-app/assets')));
 app.use(express.static(path.join(__dirname, './../documents')));
 app.use(express.static(path.join(__dirname, './../documents/profiles')));
 
-// PRODUCTION
-// app.use(express.static(path.join(__dirname, './')));
-
 // Set our api routes
-//FOR LOCAL USE ONLY
 app.use('/api', routes);
-
-//FOR PRODUCTION
-// app.use(helmet('/routes', routes));
-
+// app.use('/mailer', mailer);
 
 // Catch all other routes and return the index file
 app.get('*', (req, res) => {
@@ -54,17 +48,9 @@ app.get('*', (req, res) => {
 
 });
 
-
-
-/**
- * Create HTTP server.
- */
+/** Create HTTP server.*/
 const server = http.createServer(app);
-
-/**
- * Listen on provided port, on all network interfaces.
- */
+/** Listen on provided port, on all network interfaces. */
 server.listen(PORT, () => console.log('Server Listening'));
-
 module.exports = app;
 

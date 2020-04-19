@@ -5,13 +5,10 @@ const session = require('express-session');
 const mongoose = require('mongoose');
 const nodemailer = require('nodemailer');
 const bodyParser = require('body-parser');
-// const redis = require('redis');
-// const redisStore = require('connect-redis')(session);
-// const client  = redis.createClient();
 const app = express();
 const router = express.Router();
 const Schema = mongoose.Schema;
-const mongoDB = 'mongodb://localhost:27017/admin';
+const mongoDB = process.env.NODE_ENV === 'development' ? 'mongodb://localhost:27017/admin' : 'mongodb://localhost:4351/admin';
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const multer = require('multer');
@@ -35,22 +32,17 @@ const stripeMethods = require('./stripe/stripe');
 const stripeBase = `https://api.stripe.com`;
 // STRIPE STUFF
 const moment = require('moment');
-
 const profileStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, `./../src/assets/documents/profiles`);
   },
   filename: function (req, file, cb) {
     cb(null, `${file.originalname}`);
-  }
+  } 
 });
-
-
 const profileUpload = multer({storage: profileStorage});
-
 // const upload = multer({dest: __dirname + '/uploads/images'});
 const RSA_PRIVATE_KEY = fs.readFileSync('./key.pem');
-
 // mongoose.connect(mongoDB, options);
 mongoose.Promise = global.Promise;
 let db = mongoose.connection;
@@ -83,7 +75,8 @@ const options = {
   family: 4 // Use IPv4, skip trying IPv6
 };
 
-const conn = mongoose.createConnection('mongodb://localhost:27017/admin', options);
+const mongoURI = process.env.NODE_ENV === 'development' ? 'mongodb://localhost:27017/admin' : 'mongodb://localhost:4351/admin';
+const conn = mongoose.createConnection(mongoURI, options);
 db.on('error', console.error.bind(console, 'DB connection error:'));
 
 const rawParser = bodyParser.raw();
@@ -205,22 +198,13 @@ router.post(`/documents`, profileUpload.single('profilepic'), (req, res)=>{
   newDoc.mimeCode = setMimeType(req.file.mimetype);
   newDoc.docReference = `${moment().format('YYYYMMDDhhmmss')}-${req.file.originalname}`;
   const saveDoc = new Documents(newDoc); 
-
-  // console.log('saveDoc', saveDoc);
-
   saveDoc.save((err, doc)=>{
     if(err){
-      console.log(err);
       res.send({status:404, confirmation: 'failure', authorization: 'INVALID', message:'Not able to upload document'});
     } else {
-      console.log(doc);
-
       const tempFile = `./../src/assets/documents/profiles/temp.txt`;
       let createStream = fs.createWriteStream(tempFile);
       createStream.end();
-      // let deleteStream = fs.deleteStream(tempFile);
-      // deleteStream.end();
-
       res.send({status:200, confirmation:'success', data: doc});
     }
   });
@@ -414,7 +398,7 @@ router.post('/register', jsonParser, (req, res) => {
 
 
                 if(err){
-                  console.log(err);
+                  return err;
                 } else {
                   const authInstance = new Auth();
                   authInstance.clientEmail = req.body.clientEmail;
@@ -568,7 +552,6 @@ router.get(`/billing`, jsonParser, (req, res)=>{
     if(err){
       res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
     } else {
-      // console.log('client', client);
         let clientBilling = {};
 
         /*STRIP OUT EVERYTHING WE DONT WANT EXPOSED AND JUST SEND THE DATA YOU WANT THE USER TO SEE AND BE ABLE TO UPDATE*/
@@ -588,15 +571,11 @@ router.get(`/billing`, jsonParser, (req, res)=>{
                 subscriptions: customer.subscriptions,
                 tax_exempt: customer.tax_exempt,
   
-              } || {};
-
-              // console.log('clientBilling.customer', clientBilling.customer);
-  
+              } || {};  
               stripe.paymentMethods.list(
                 {customer: client[0].stripeId, type: 'card'},
                 function(err, paymentMethods) {
                   let method = paymentMethods.data[0];
-                  console.log('method', method);
                   clientBilling.paymentMethods = {
                     paymentMethodId: method.id,
                     billing_details: method.billing_details,
@@ -647,10 +626,9 @@ router.put(`/billing`, jsonParser, (req, res)=>{
     req.body.stripeId, {address: addressPayload},
     function(err, customer) {
       if(err){
-        console.log(err);
+        return err;
         res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
       } else {
-        console.log('updated and on to create payment method');
         if(req.body.stripeNumber){
           stripe.paymentMethods.create(
           {
@@ -679,24 +657,19 @@ router.put(`/billing`, jsonParser, (req, res)=>{
           function(err, paymentMethod) {
 
             if(err){
-              console.log(err);
               res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
             } else {
-              console.log('created payment method and on to attach');
               stripe.paymentMethods.attach(
                 paymentMethod.id,
                 {customer: customer.id},
                 function(err, paymentMethod) {
                   if(err){
-                    console.log(err);
                     res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
                   } else {
-                    console.log('attached and on to detach');
                     stripe.paymentMethods.detach(
                       req.body.paymentMethodId,
                       function(err, paymentMethod) {
                         if(err){
-                          console.log(err);
                           res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
                         } else {
                           res.send({status:200, confirmation:'success'});
@@ -742,27 +715,6 @@ router.put(`/courses`, jsonParser, (req, res)=>{
   });
 });
 
-
-// Clients.update({clientAccountNum:acct}, req.body, (err, client)=>{
-//         if(err){res.send({status:404, confirmation: 'failure', authorization: 'INVALID', message: 'not able to update'});
-//         } else {
-//           Clients.find({clientAccountNum:acct}, (err, updated)=>{
-//               if(updated.length > 0){
-//                 if(updated[0].stripeId){
-//                   stripeMethods.updateStripe(updated[0].stripeId, updated[0]);
-//                 }
-
-//                 const results = {status:201, confirmation:'success', client: updated[0]};
-//                 res.send(results);
-//                 res.end();
-//               } else {
-//                 res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
-//               }
-//             });
-//         }});
-
-
-
 // STRIPE
 router.get(`${stripeBase}/page-header`, jsonParser, (req, res)=>{
   pageHeader.find({}, (err, page)=>{
@@ -779,25 +731,31 @@ router.get(`${stripeBase}/page-header`, jsonParser, (req, res)=>{
 router.post(`/forgot-password`, jsonParser, (req, res)=>{
   Auth.find({clientEmail: req.body.clientEmail}, (err, auth)=>{
     if(err){
-      console.log('cant find');
+      return err;
       // res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
     } else {
       // res.send({status:200, confirmation:'success', data: mimes});
 
       if(auth.length > 0){
 
-        transporter.sendMail({
-          from: 'mark@thebeardedtek.com',
-          to: req.body.clientEmail,
-          subject: 'Message',
-          text: 'I hope this message gets through!',
-          auth: {
-              user: 'user@example.com',
-              refreshToken: '1/XXxXxsss-xxxXXXXXxXxx0XXXxxXXx0x00xxx',
-              accessToken: 'ya29.Xx_XX0xxxxx-xX0X0XxXXxXxXXXxX0x',
-              expires: 1484314697598
-          }
-        });
+        // transporter.sendMail({
+        //   from: 'mark@thebeardedtek.com',
+        //   to: req.body.clientEmail,
+        //   subject: 'Message',
+        //   text: 'I hope this message gets through!',
+        //   auth: {
+        //       user: 'mark@thebeardedtek.com',
+        //       refreshToken: '1/XXxXxsss-xxxXXXXXxXxx0XXXxxXXx0x00xxx',
+        //       accessToken: 'ya29.Xx_XX0xxxxx-xX0X0XxXXxXxXXXxX0x',
+        //       expires: 1484314697598
+        //   }
+        // });
+
+      //   auth: {
+      //     type: 'OAuth2',
+      //     clientId: '26338801886-ah3d799uvmtvped3of7m1r0v8fodsk27.apps.googleusercontent.com',
+      //     clientSecret: 'MMuZzmrjyI0ecHkvyuDaPh6c'
+      // }
 
 
       }
@@ -819,6 +777,25 @@ router.post(`/contact-form`, jsonParser, (req, res)=>{
       contactInstance.currentUrl = req.body.currentUrl;
       contactInstance.userAgent = req.body.userAgent;
       contactInstance.appName = req.body.appName;
+
+      // transporter.sendMail({
+      //   from: 'mark@thebeardedtek.com',
+      //   to: `mark@thebeardedtek.com`,
+      //   subject: 'Contact Form',
+      //   text: `
+      //   You received a message from ${contactInstance.name}. The client writes ${contactInstance.message}. 
+        
+      //   You may contact the client at <a href="mailto:${contactInstance.email}">${contactInstance.email}</a> or call, <a href="mailto:${contactInstance.number}">${contactInstance.number}</a>
+      //   `,
+      //   auth: {
+      //       user: 'mark@thebeardedtek.com',
+      //       refreshToken: '1/XXxXxsss-xxxXXXXXxXxx0XXXxxXXx0x00xxx',
+      //       accessToken: 'ya29.Xx_XX0xxxxx-xX0X0XxXXxXxXXXxX0x',
+      //       expires: 1484314697598
+      //   }
+      // });
+
+      
 
       contactInstance.save((err, confirm)=>{
         if(err){
