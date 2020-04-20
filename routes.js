@@ -8,7 +8,7 @@ const bodyParser = require('body-parser');
 const app = express();
 const router = express.Router();
 const Schema = mongoose.Schema;
-const mongoDB = process.env.NODE_ENV === 'development' ? 'mongodb://localhost:27017/admin' : 'mongodb://localhost:4351/admin';
+const mongoDB = 'mongodb://localhost:27017/admin';
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const multer = require('multer');
@@ -58,7 +58,7 @@ const setSession = session({
         expires: expiryDate
       }
     })
-
+ 
 app.use(setSession)
 const options = {
   useNewUrlParser: true,
@@ -75,8 +75,7 @@ const options = {
   family: 4 // Use IPv4, skip trying IPv6
 };
 
-const mongoURI = process.env.NODE_ENV === 'development' ? 'mongodb://localhost:27017/admin' : 'mongodb://localhost:4351/admin';
-const conn = mongoose.createConnection(mongoURI, options);
+const conn = mongoose.createConnection('mongodb://localhost:27017/admin', options);
 db.on('error', console.error.bind(console, 'DB connection error:'));
 
 const rawParser = bodyParser.raw();
