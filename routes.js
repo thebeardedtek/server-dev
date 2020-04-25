@@ -8,7 +8,7 @@ const bodyParser = require('body-parser');
 const app = express();
 const router = express.Router();
 const Schema = mongoose.Schema;
-const mongoDB = 'mongodb://localhost:27017/admin';
+const mongoDB = 'mongodb://157.245.246.179:27017/admin';
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const multer = require('multer');
@@ -32,14 +32,31 @@ const stripeMethods = require('./stripe/stripe');
 const stripeBase = `https://api.stripe.com`;
 // STRIPE STUFF
 const moment = require('moment');
-const profileStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, `./../src/assets/documents/profiles`);
-  },
-  filename: function (req, file, cb) {
-    cb(null, `${file.originalname}`);
-  } 
-});
+let profileStorage;
+
+if(process.env.NODE_ENV === 'development'){
+  profileStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, `./../src/assets/documents/profiles`);
+    },
+    filename: function (req, file, cb) {
+      cb(null, `${file.originalname}`);
+    } 
+  });
+} else {
+  profileStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, `./app/assets/documents/profiles`);
+    },
+    filename: function (req, file, cb) {
+      cb(null, `${file.originalname}`);
+    } 
+  });
+}
+
+
+
+
 const profileUpload = multer({storage: profileStorage});
 // const upload = multer({dest: __dirname + '/uploads/images'});
 const RSA_PRIVATE_KEY = fs.readFileSync('./key.pem');
@@ -75,7 +92,7 @@ const options = {
   family: 4 // Use IPv4, skip trying IPv6
 };
 
-const conn = mongoose.createConnection('mongodb://localhost:27017/admin', options);
+const conn = mongoose.createConnection('mongodb://admin:Bearolemodel37#1@157.245.246.179:27017/admin', options);
 db.on('error', console.error.bind(console, 'DB connection error:'));
 
 const rawParser = bodyParser.raw();
@@ -168,7 +185,7 @@ function setMimeType(mimetype){
 router.post('/history', jsonParser,  (req, res) => {
   const historyInstance = new History();
       historyInstance.action = req.body.action || `GENERAL`;
-      historyInstance.createdDate = req.body.createdDate || new Date();
+      historyInstance.createdDate = req.body.createdDate || moment().format();
       historyInstance.device = req.body.device;
       historyInstance.navigator = req.body.navigator;
       historyInstance.location = req.body.location;
@@ -185,7 +202,7 @@ router.post('/history', jsonParser,  (req, res) => {
 
 router.post(`/documents`, profileUpload.single('profilepic'), (req, res)=>{
   const newDoc = {};
-  newDoc.createdDate = new Date();
+  newDoc.createdDate = moment().format();
   newDoc.fieldname = req.file.fieldname;
   newDoc.filename = req.file.originalname;
   newDoc.originalname = req.file.originalname;
@@ -201,7 +218,7 @@ router.post(`/documents`, profileUpload.single('profilepic'), (req, res)=>{
     if(err){
       res.send({status:404, confirmation: 'failure', authorization: 'INVALID', message:'Not able to upload document'});
     } else {
-      const tempFile = `./../src/assets/documents/profiles/temp.txt`;
+      let tempFile = process.env.NODE_ENV === 'development' ? `./../src/assets/documents/profiles/temp.txt` : `./app/assets/documents/profiles/temp.txt`;
       let createStream = fs.createWriteStream(tempFile);
       createStream.end();
       res.send({status:200, confirmation:'success', data: doc});
@@ -217,7 +234,7 @@ router.get(`/documents`, jsonParser, (req, res)=>{
       if(doc.length > 0){
         res.send({status:200, confirmation:'success', data: doc[0]});
       } else {
-        res.send({status:200, confirmation:'success', data: `default-avatar.png`});
+        res.send({status:200, confirmation:'success', data: `default-avatar.jpg`});
       }
     }
   });
@@ -247,7 +264,7 @@ router.get(`/user`, (req, res, next) => {
 
 router.put('/user', jsonParser, (req, res, next) => {
 
-  req.body.updatedDate = new Date();
+  req.body.updatedDate = moment().format();
 
   Auth.find({clientEmail: req.body.clientEmail}, (err, existing)=>{
     if(err){
@@ -341,11 +358,12 @@ Clients.update({clientEmail: req.body.clientEmail}, {lastSignIn: lastSignIn}, (e
 /* REGISTER */
 router.post('/register', jsonParser, (req, res) => {
   let registrar = req.body;
-  req.body.clientPassword = passwordHash.generate(req.body.clientPassword);
-  req.body.createdDate = new Date();
-  req.body.updatedDate = createdDate;
+  registrar.clientPassword = passwordHash.generate(registrar.clientPassword);
+  registrar.createdDate = moment().format();
+  registrar.updatedDate = registrar.createdDate;
+  console.log('registrar', registrar);
 
-  Auth.where({clientEmail: req.body.clientEmail}).find({}, function(err, client){
+  Auth.where({clientEmail: registrar.clientEmail}).find({}, function(err, client){
     if(err){
       res.status(500).send(err);
     } else {
@@ -361,23 +379,23 @@ router.post('/register', jsonParser, (req, res) => {
 
           const acctNum = `${getRandomInt(100000000,999999999)}`;
 
-          stripeEmail = req.body.clientEmail;
+          stripeEmail = registrar.clientEmail;
           stripeAccountNumber = acctNum;
 
             stripe.customers.create(
-              {email: stripeEmail, name:req.body.stripeFullName,
+              {email: stripeEmail, name:registrar.stripeFullName,
               metadata:{accountNumber: stripeAccountNumber}},
               (err, customer) => {
 
-                if(req.body.stripeNumber){
+                if(registrar.stripeNumber){
                   stripe.paymentMethods.create(
                   {
                     type: 'card',
                     card: {
-                      number: req.body.stripeNumber,
-                      exp_month: req.body.stripeExpMonth,
-                      exp_year: req.body.stripeExpYear,
-                      cvc: req.body.stripeCvc,
+                      number: registrar.stripeNumber,
+                      exp_month: registrar.stripeExpMonth,
+                      exp_year: registrar.stripeExpYear,
+                      cvc: registrar.stripeCvc,
                     },
                   },
                   function(err, paymentMethod) {
@@ -389,12 +407,10 @@ router.post('/register', jsonParser, (req, res) => {
 
                       }
                     ); //end payment methods
-
                     // asynchronously called
                   }
                 );
                 }
-
 
                 if(err){
                   return err;
@@ -405,7 +421,7 @@ router.post('/register', jsonParser, (req, res) => {
                   authInstance.clientType = req.body.clientType;
                   authInstance.clientAccountNum = acctNum;
                   authInstance.stripeId = customer ? customer.id : null;
-                  authInstance.createdDate = req.body.createdDate || new Date();
+                  authInstance.createdDate = req.body.createdDate || moment().format();
                   authInstance.updatedDate = req.body.updatedDate || authInstance.createdDate;
 
                   const clientsInstance = new Clients();
@@ -416,8 +432,6 @@ router.post('/register', jsonParser, (req, res) => {
                   clientsInstance.stripeId = customer ? customer.id : null;
                   clientsInstance.createdDate = req.body.createdDate;
                   clientsInstance.updatedDate = req.body.updatedDate;
-
-   
 
                   authInstance.save(err =>{
                     if(err){
@@ -541,8 +555,18 @@ router.get(`/project-status`, jsonParser, (req, res)=>{
   });
 });
 
-
-
+router.get(`/products`, jsonParser, (req, res)=>{
+  stripe.plans.list(
+    {},
+    function(err, plans) {
+      if(err){
+        res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
+      } else {
+        res.send({status:200, confirmation:'success', data: plans});
+      }
+    }
+  );
+});
 
 
 router.get(`/billing`, jsonParser, (req, res)=>{
@@ -560,26 +584,31 @@ router.get(`/billing`, jsonParser, (req, res)=>{
             
             if(customer){
               clientBilling.customer = {
-                name: customer.name,
-                address: customer.address,
-                balance: customer.balance,
-                delinquent: customer.delinquent,
-                discount: customer.discount,
-                phone: customer.phone,
-                shipping: customer.shipping,
-                subscriptions: customer.subscriptions,
-                tax_exempt: customer.tax_exempt,
+                name: customer.name || null,
+                address: customer.address || null,
+                balance: customer.balance || null,
+                delinquent: customer.delinquent || null,
+                discount: customer.discount || null,
+                phone: customer.phone || null,
+                shipping: customer.shipping || null,
+                subscriptions: customer.subscriptions || null,
+                tax_exempt: customer.tax_exempt || null,
   
               } || {};  
               stripe.paymentMethods.list(
                 {customer: client[0].stripeId, type: 'card'},
                 function(err, paymentMethods) {
+                  // console.log('paymentMethods', paymentMethods);
                   let method = paymentMethods.data[0];
-                  clientBilling.paymentMethods = {
-                    paymentMethodId: method.id,
-                    billing_details: method.billing_details,
-                    card: method.card,
-                  } || {};
+                  if(method){
+                    clientBilling.paymentMethods = {
+                      paymentMethodId: method.id,
+                      billing_details: method.billing_details,
+                      card: method.card,
+                    };
+                  } else {
+                    clientBilling.paymentMethods = {}
+                  }
                   res.send({status:200, confirmation:'success', data: clientBilling});
                 }
               );
@@ -604,8 +633,122 @@ router.get(`/billing`, jsonParser, (req, res)=>{
   });
 });
 
-router.put(`/billing`, jsonParser, (req, res)=>{
+router.put(`/address`, jsonParser, (req, res)=>{
   let addressPayload = {
+    line1: req.body.line1 || '',
+    line2: req.body.line2 || '',
+    city: req.body.city || '',
+    state: req.body.state || '',
+    postal_code: req.body.postalCode || '',
+  };
+
+  stripe.customers.update(
+    req.body.stripeId, {address: addressPayload},
+    function(err, customer) {
+      if(err){
+        res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
+      } else {
+        res.send({status:200, confirmation:'success'});
+      }
+    }
+  );
+
+})
+
+router.put(`/payment`, jsonParser, (req, res)=>{
+  stripe.customers.retrieve(
+    req.body.stripeId,
+    function(err, customer) {
+      stripe.paymentMethods.create(
+        {
+          type: 'card',
+          card: {
+            number: req.body.stripeNumber,
+            exp_month: req.body.stripeExpMonth,
+            exp_year: req.body.stripeExpYear,
+            cvc: req.body.stripeCvc,
+          },
+          billing_details:{
+            address:{
+              line1: req.body.line1,
+              line2: req.body.line2,
+              city: req.body.city,
+              state: req.body.state,
+              postal_code: req.body.postalCode,
+            },
+            name: req.body.stripeFullName,
+            email: req.body.clientEmail,
+            phone: req.body.clientPhone1,
+    
+          },
+          
+        },
+        function(err, paymentMethod) {
+    
+          stripe.paymentMethods.attach(
+            paymentMethod.id,
+            {customer: customer.id},
+            function(err, paymentMethod) {
+              if(err){
+                console.log('paymentMethod attach err', err);
+                res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
+              } else {
+      
+                if(req.body.paymentMethodId){
+                  stripe.paymentMethods.detach(
+                    String(req.body.paymentMethodId),
+                    function(err, paymentMethod) {
+                      if(err){
+                        console.log('paymentMethod detach err', err);
+                      } else {
+                        // console.log(paymentMethod);
+                      }
+                    }
+                  );
+                }
+                res.send({status:200, confirmation:'success'});
+              }
+            }
+          ); //end payment methods
+        })
+    }
+  );
+})
+
+
+router.put(`/plan`, jsonParser, (req, res)=>{
+  stripe.paymentMethods.list(
+    {customer: req.body.stripeId, type: 'card'},
+    function(err, paymentMethods) {
+      if(err){
+        console.log('err', err);
+        res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
+      } else {
+        if(req.body.plan && paymentMethods.data.length > 0){
+          stripe.subscriptions.create(
+            {
+              customer: req.body.stripeId, 
+              items: [{plan: req.body.plan}],
+            },
+            function(err, subscription) {
+              if(err){
+                console.log('subscription err', err);
+              } else {
+                res.send({status:200, confirmation:'success'});
+              }
+            }
+          );
+        } else {
+          res.send({status:200, confirmation:'success'});
+        }
+      }
+    }
+  );
+})
+
+  router.put(`/billing`, jsonParser, (req, res)=>{
+
+    let addressPayload = {
     line1: req.body.line1,
     line2: req.body.line2,
     city: req.body.city,
@@ -621,13 +764,22 @@ router.put(`/billing`, jsonParser, (req, res)=>{
     stripeZip: req.body.stripeZip,
   };
 
+  
+
+
+  let updatedStripeId;
+
+  // plan: this.clientAddressForm.controls['plan'].value,
+  // stripeProductNum: this.getPlanInfo(this.clientAddressForm.controls['plan'].value),
+  // period: this.activePeriod,
+
   stripe.customers.update(
     req.body.stripeId, {address: addressPayload},
     function(err, customer) {
       if(err){
-        return err;
         res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
       } else {
+        updatedStripeId = customer.id;
         if(req.body.stripeNumber){
           stripe.paymentMethods.create(
           {
@@ -656,6 +808,7 @@ router.put(`/billing`, jsonParser, (req, res)=>{
           function(err, paymentMethod) {
 
             if(err){
+              console.log('create err', err);
               res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
             } else {
               stripe.paymentMethods.attach(
@@ -663,18 +816,40 @@ router.put(`/billing`, jsonParser, (req, res)=>{
                 {customer: customer.id},
                 function(err, paymentMethod) {
                   if(err){
+                    console.log('paymentMethod attach err', err);
                     res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
                   } else {
-                    stripe.paymentMethods.detach(
-                      req.body.paymentMethodId,
-                      function(err, paymentMethod) {
-                        if(err){
-                          res.send({status:404, confirmation: 'failure', authorization: 'INVALID'});
-                        } else {
-                          res.send({status:200, confirmation:'success'});
+
+                    if(req.body.paymentMethodId){
+                      stripe.paymentMethods.detach(
+                        String(req.body.paymentMethodId),
+                        function(err, paymentMethod) {
+                          if(err){
+                            console.log('paymentMethod detach err', err);
+                          } else {
+                            // console.log(paymentMethod);
+                          }
                         }
-                      }
-                    );
+                      );
+                    }
+
+                    if(req.body.plan){
+                      stripe.subscriptions.create(
+                        {
+                          customer: updatedStripeId ? updatedStripeId : req.body.stripeId,
+                          items: [{plan: req.body.plan}],
+                        },
+                        function(err, subscription) {
+                          if(err){
+                            console.log('subscription err', err);
+                          } else {
+                            // console.log(subscription);
+                          }
+                        }
+                      );
+                    }
+
+                    res.send({status:200, confirmation:'success'});
                   }
                 }
               ); //end payment methods

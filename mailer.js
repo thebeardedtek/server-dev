@@ -19,7 +19,7 @@ app.set('trust proxy', 1) // trust first proxy
 
 
 router.get('/', (req, res) => {
-  res.send(null);
+  res.send('works');
   });
 
 
